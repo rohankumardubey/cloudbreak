@@ -161,4 +161,6 @@ public interface HostOrchestrator extends HostRecipeExecutor {
 
     void saveCustomPillars(SaltConfig saltConfig, ExitCriteriaModel exitModel, OrchestratorStateParams stateParams)
             throws CloudbreakOrchestratorFailedException;
+
+    boolean unboundRunningOnCluster(GatewayConfig primaryGateway, Set<Node> nodes);
 }

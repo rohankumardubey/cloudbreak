@@ -381,10 +381,10 @@ public class SaltOrchestrator implements HostOrchestrator {
     private void uploadMountScriptsAndMakeThemExecutable(Set<Node> nodes, ExitCriteriaModel exitModel, Set<String> allTargets, Target<String> allHosts,
             SaltConnector sc) throws IOException {
         Map.of(
-                DISK_INITIALIZE, readFileFromClasspath(DISK_SCRIPT_PATH + DISK_INITIALIZE).getBytes(),
-                DISK_COMMON, readFileFromClasspath(DISK_SCRIPT_PATH + DISK_COMMON).getBytes(),
-                DISK_FORMAT, readFileFromClasspath(DISK_SCRIPT_PATH + DISK_FORMAT).getBytes(),
-                DISK_MOUNT, readFileFromClasspath(DISK_SCRIPT_PATH + DISK_MOUNT).getBytes())
+                        DISK_INITIALIZE, readFileFromClasspath(DISK_SCRIPT_PATH + DISK_INITIALIZE).getBytes(),
+                        DISK_COMMON, readFileFromClasspath(DISK_SCRIPT_PATH + DISK_COMMON).getBytes(),
+                        DISK_FORMAT, readFileFromClasspath(DISK_SCRIPT_PATH + DISK_FORMAT).getBytes(),
+                        DISK_MOUNT, readFileFromClasspath(DISK_SCRIPT_PATH + DISK_MOUNT).getBytes())
                 .entrySet()
                 .stream()
                 .map(script -> {
@@ -1669,5 +1669,12 @@ public class SaltOrchestrator implements HostOrchestrator {
             LOGGER.info("Error occurred during the salt bootstrap", e);
             throw new CloudbreakOrchestratorFailedException(e.getMessage(), e);
         }
+    }
+
+    @Override
+    public boolean unboundRunningOnCluster(GatewayConfig primaryGateway, Set<Node> nodes) {
+        SaltConnector saltConnector = saltService.createSaltConnector(primaryGateway);
+        return saltStateService.unboundRunningOnCluster(saltConnector,
+                new HostList(nodes.stream().map(Node::getHostname).collect(Collectors.toSet())));
     }
 }

@@ -12,13 +12,6 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.core.io.ClassPathResource;
 import org.springframework.stereotype.Service;
 
-import com.amazonaws.services.pricing.AWSPricing;
-import com.amazonaws.services.pricing.AWSPricingClientBuilder;
-import com.amazonaws.services.pricing.model.Filter;
-import com.amazonaws.services.pricing.model.FilterType;
-import com.amazonaws.services.pricing.model.GetProductsRequest;
-import com.amazonaws.services.pricing.model.GetProductsResult;
-import com.amazonaws.services.pricing.model.NotFoundException;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.sequenceiq.cloudbreak.cloud.PricingCache;
 import com.sequenceiq.cloudbreak.cloud.aws.common.cost.model.PriceListElement;
@@ -27,6 +20,14 @@ import com.sequenceiq.cloudbreak.common.json.JsonUtil;
 import com.sequenceiq.cloudbreak.common.mappable.CloudPlatform;
 import com.sequenceiq.cloudbreak.service.CloudbreakRuntimeException;
 import com.sequenceiq.cloudbreak.util.FileReaderUtils;
+
+import software.amazon.awssdk.regions.Region;
+import software.amazon.awssdk.services.pricing.PricingClient;
+import software.amazon.awssdk.services.pricing.model.Filter;
+import software.amazon.awssdk.services.pricing.model.FilterType;
+import software.amazon.awssdk.services.pricing.model.GetProductsRequest;
+import software.amazon.awssdk.services.pricing.model.GetProductsResponse;
+import software.amazon.awssdk.services.pricing.model.NotFoundException;
 
 @Service("awsPricingCache")
 public class AwsPricingCache implements PricingCache {
@@ -40,7 +41,7 @@ public class AwsPricingCache implements PricingCache {
     private static final int HOURS_IN_30_DAYS = 720;
 
     @Inject
-    private AWSPricing awsPricing;
+    private PricingClient awsPricing;
 
     private static Map<String, Map<String, Double>> loadStoragePriceList() {
         ClassPathResource classPathResource = new ClassPathResource(AWS_STORAGE_PRICING_JSON_LOCATION);
@@ -59,10 +60,8 @@ public class AwsPricingCache implements PricingCache {
     @Cacheable(cacheNames = "awsCostCache", key = "{ #region, #instanceType }")
     public double getPriceForInstanceType(String region, String instanceType) {
         PriceListElement priceListElement = getPriceList(region, instanceType);
-        return priceListElement.getTerms().getOnDemand().values().stream().findFirst().orElseThrow(() ->
-                        new NotFoundException(String.format("Couldn't find the price for region [%s] and instance type [%s].", region, instanceType)))
-                .getPriceDimensions().values().stream().findFirst().orElseThrow(() ->
-                        new NotFoundException(String.format("Couldn't find the price for region [%s] and instance type [%s].", region, instanceType)))
+        return priceListElement.getTerms().getOnDemand().values().stream().findFirst().orElseThrow(() -> createNotFoundException(region, instanceType))
+                .getPriceDimensions().values().stream().findFirst().orElseThrow(() -> createNotFoundException(region, instanceType))
                 .getPricePerUnit().getUsd();
     }
 
@@ -92,32 +91,42 @@ public class AwsPricingCache implements PricingCache {
 
     private PriceListElement getPriceList(String region, String instanceType) {
         try {
-            GetProductsResult productsResult = getProducts(region, instanceType);
-            String priceListString = productsResult.getPriceList().stream().findFirst().orElseThrow(() ->
-                            new NotFoundException(String.format("Couldn't find the price list for the region %s and instance type %s!", region, instanceType)));
+            GetProductsResponse productsResponse = getProducts(region, instanceType);
+            String priceListString = productsResponse.priceList().stream().findFirst()
+                    .orElseThrow(() -> NotFoundException.builder()
+                            .message(String.format("Couldn't find the price list for the region %s and instance type %s!", region, instanceType)).build());
             return JsonUtil.readValue(priceListString, PriceListElement.class);
         } catch (IOException e) {
             throw new CloudbreakRuntimeException("Failed to get price list from provider!", e);
         }
     }
 
-    private GetProductsResult getProducts(String region, String instanceType) {
-        GetProductsRequest productsRequest = new GetProductsRequest()
-                .withServiceCode("AmazonEC2")
-                .withFormatVersion("aws_v1")
-                .withFilters(
-                        new Filter().withType(FilterType.TERM_MATCH).withField("regionCode").withValue(region),
-                        new Filter().withType(FilterType.TERM_MATCH).withField("instanceType").withValue(instanceType),
-                        new Filter().withType(FilterType.TERM_MATCH).withField("operatingSystem").withValue("Linux"),
-                        new Filter().withType(FilterType.TERM_MATCH).withField("preInstalledSw").withValue("NA"),
-                        new Filter().withType(FilterType.TERM_MATCH).withField("capacitystatus").withValue("Used"),
-                        new Filter().withType(FilterType.TERM_MATCH).withField("tenancy").withValue("Shared"));
+    private GetProductsResponse getProducts(String region, String instanceType) {
+        GetProductsRequest productsRequest = GetProductsRequest.builder()
+                .serviceCode("AmazonEC2")
+                .formatVersion("aws_v1")
+                .filters(
+                        Filter.builder().type(FilterType.TERM_MATCH).field("regionCode").value(region).build(),
+                        Filter.builder().type(FilterType.TERM_MATCH).field("instanceType").value(instanceType).build(),
+                        Filter.builder().type(FilterType.TERM_MATCH).field("operatingSystem").value("Linux").build(),
+                        Filter.builder().type(FilterType.TERM_MATCH).field("preInstalledSw").value("NA").build(),
+                        Filter.builder().type(FilterType.TERM_MATCH).field("capacitystatus").value("Used").build(),
+                        Filter.builder().type(FilterType.TERM_MATCH).field("tenancy").value("Shared").build())
+                .build();
         return awsPricing.getProducts(productsRequest);
     }
 
+    private NotFoundException createNotFoundException(String regionName, String instanceType) {
+        return NotFoundException.builder()
+                .message(String.format("Couldn't find the price for region [%s] and instance type [%s].", regionName, instanceType))
+                .build();
+    }
+
     @Bean
-    public AWSPricing getAwsPricing() {
-        return AWSPricingClientBuilder.standard().withRegion(PRICING_API_ENDPOINT_REGION).build();
+    public PricingClient getAwsPricing() {
+        return PricingClient.builder()
+                .region(Region.of(PRICING_API_ENDPOINT_REGION))
+                .build();
     }
 
     @Override

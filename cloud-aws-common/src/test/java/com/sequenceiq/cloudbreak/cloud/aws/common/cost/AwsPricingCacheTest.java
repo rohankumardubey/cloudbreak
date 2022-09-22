@@ -14,9 +14,6 @@ import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
-import com.amazonaws.services.pricing.AWSPricing;
-import com.amazonaws.services.pricing.model.GetProductsRequest;
-import com.amazonaws.services.pricing.model.GetProductsResult;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.sequenceiq.cloudbreak.cloud.aws.common.cost.model.Attributes;
 import com.sequenceiq.cloudbreak.cloud.aws.common.cost.model.OfferTerm;
@@ -27,6 +24,10 @@ import com.sequenceiq.cloudbreak.cloud.aws.common.cost.model.Product;
 import com.sequenceiq.cloudbreak.cloud.aws.common.cost.model.Terms;
 import com.sequenceiq.cloudbreak.common.json.JsonUtil;
 
+import software.amazon.awssdk.services.pricing.PricingClient;
+import software.amazon.awssdk.services.pricing.model.GetProductsRequest;
+import software.amazon.awssdk.services.pricing.model.GetProductsResponse;
+
 @ExtendWith(MockitoExtension.class)
 public class AwsPricingCacheTest {
 
@@ -35,7 +36,7 @@ public class AwsPricingCacheTest {
     private static final String INSTANCE_TYPE = "instanceType";
 
     @Mock
-    private AWSPricing awsPricing;
+    private PricingClient awsPricing;
 
     @InjectMocks
     private AwsPricingCache underTest;
@@ -103,7 +104,7 @@ public class AwsPricingCacheTest {
         Assertions.assertNotEquals(0.0, price);
     }
 
-    private GetProductsResult getGetProductsResult() {
+    private GetProductsResponse getGetProductsResult() {
         Attributes attributes = new Attributes();
         attributes.setVcpu(69);
         attributes.setMemory("420");
@@ -113,12 +114,12 @@ public class AwsPricingCacheTest {
         OfferTerm offerTerm = new OfferTerm(Map.of("test", priceDimension), null, null, null, null);
         Terms terms = new Terms(Map.of("onDemand", offerTerm), null);
         PriceListElement priceListElement = new PriceListElement(product, null, terms, null, null);
-        GetProductsResult getProductsResult = new GetProductsResult();
+        GetProductsResponse.Builder getProductsResponseBuilder = GetProductsResponse.builder();
         try {
-            getProductsResult.setPriceList(List.of(JsonUtil.writeValueAsString(priceListElement)));
+            getProductsResponseBuilder.priceList(List.of(JsonUtil.writeValueAsString(priceListElement)));
         } catch (JsonProcessingException e) {
             throw new RuntimeException(e);
         }
-        return getProductsResult;
+        return getProductsResponseBuilder.build();
     }
 }

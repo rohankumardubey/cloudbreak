@@ -34,8 +34,8 @@ public abstract class AbstractAzureComputeBuilder extends AbstractAzureResourceB
     }
 
     @Override
-    public List<CloudResource> update(AzureContext context, CloudInstance instance, long privateId,
-            AuthenticatedContext auth, Group group, CloudStack cloudStack) throws Exception {
-        return List.of();
+    public CloudResource update(AzureContext context, CloudResource cloudResource, CloudInstance instance,
+            AuthenticatedContext auth, CloudStack cloudStack) throws Exception {
+        return null;
     }
 }

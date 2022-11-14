@@ -8,6 +8,7 @@ import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
+import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -359,6 +360,30 @@ public class GcpInstanceResourceBuilder extends AbstractGcpComputeBuilder {
     @Override
     public CloudVmInstanceStatus stop(GcpContext context, AuthenticatedContext auth, CloudInstance instance) {
         return stopStart(context, auth, instance, true);
+    }
+
+    @Override
+    public CloudResource update(GcpContext context, CloudResource resource, CloudInstance cloudInstance,
+        AuthenticatedContext auth, CloudStack cloudStack) throws Exception {
+        String projectId = gcpStackUtil.getProjectId(auth.getCloudCredential());
+        String availabilityZone = cloudInstance.getAvailabilityZone();
+        Compute compute = context.getCompute();
+        String instanceId = cloudInstance.getInstanceId();
+        try {
+            LOGGER.info("Gcp operations are preparing: instanceId: {}, projectId: {}, availabilityZone: {}", instanceId, projectId, availabilityZone);
+            Get get = compute.instances().get(projectId, availabilityZone, instanceId);
+            Instance gcpInstance = get.execute();
+            gcpInstance.setMachineType(String.format("https://www.googleapis.com/compute/v1/projects/%s/zones/%s/machineTypes/%s",
+                    projectId, availabilityZone, cloudInstance.getTemplate().getFlavor()));
+            Compute.Instances.Update update = compute.instances().update(projectId, availabilityZone, gcpInstance.getName(), gcpInstance);
+            Operation operation = update.execute();
+            LOGGER.debug("Operation with {} successfully inited on {} instance.", operation.getName(), cloudInstance.getInstanceId());
+            return createOperationAwareCloudResource(resource, operation);
+        } catch (TokenResponseException e) {
+            throw gcpStackUtil.getMissingServiceAccountKeyError(e, context.getProjectId());
+        } catch (IOException e) {
+            throw new GcpResourceException(String.format("An error occurred while stopping the vm '%s'", instanceId), e);
+        }
     }
 
     @Override

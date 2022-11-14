@@ -5,6 +5,7 @@ import static java.lang.String.format;
 
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.Collections;
 import java.util.List;
 import java.util.concurrent.Callable;
 
@@ -41,80 +42,58 @@ public class ResourceUpdateCallable implements Callable<ResourceRequestResult<Li
     // half an hour with 1 sec delays
     private static final int VOLUME_SET_POLLING_ATTEMPTS = 1800;
 
-    private final ResourceBuilders resourceBuilders;
-
     private final SyncPollingScheduler<List<CloudResourceStatus>> syncPollingScheduler;
 
     private final ResourcePollTaskFactory resourcePollTaskFactory;
 
     private final PersistenceNotifier persistenceNotifier;
 
-    private final List<CloudInstance> instances;
-
-    private final Group group;
-
     private final ResourceBuilderContext context;
 
     private final AuthenticatedContext auth;
 
-    private final CloudStack cloudStack;
+    private final CloudResource resource;
 
-    public ResourceUpdateCallable(ResourceUpdateCallablePayload payload, ResourceBuilders resourceBuilders,
-        SyncPollingScheduler<List<CloudResourceStatus>> syncPollingScheduler, ResourcePollTaskFactory resourcePollTaskFactory,
-        PersistenceNotifier persistenceNotifier) {
-        this.resourceBuilders = resourceBuilders;
+    private final CloudInstance instance;
+
+    private final CloudStack stack;
+
+    private final ComputeResourceBuilder<ResourceBuilderContext> builder;
+
+    public ResourceUpdateCallable(ResourceUpdateCallablePayload payload, SyncPollingScheduler<List<CloudResourceStatus>> syncPollingScheduler,
+        ResourcePollTaskFactory resourcePollTaskFactory, PersistenceNotifier persistenceNotifier) {
         this.syncPollingScheduler = syncPollingScheduler;
         this.resourcePollTaskFactory = resourcePollTaskFactory;
         this.persistenceNotifier = persistenceNotifier;
-        this.instances = payload.getInstances();
-        this.group = payload.getGroup();
         this.context = payload.getContext();
         this.auth = payload.getAuth();
-        this.cloudStack = payload.getCloudStack();
+        this.resource = payload.getCloudResource();
+        this.instance = payload.getCloudInstance();
+        this.stack = payload.getCloudStack();
+        this.builder = payload.getBuilder();
     }
 
     @Override
-    public ResourceRequestResult<List<CloudResourceStatus>> call() {
-        List<CloudResourceStatus> results = new ArrayList<>();
-        String stackName = auth.getCloudContext().getName();
-        for (CloudInstance instance : instances) {
-            LOGGER.debug("Create all compute resources for instance: '{}' stack: '{}'", instance, stackName);
-            Collection<CloudResource> buildableResources = new ArrayList<>();
-            Long privateId = instance.getTemplate().getPrivateId();
+    public ResourceRequestResult<List<CloudResourceStatus>> call() throws Exception {
+        LOGGER.debug("Deleting compute resource {}", resource);
+        if (resource.getStatus().resourceExists()) {
+            CloudResource updateResource;
             try {
-                Variant variant = auth.getCloudContext().getVariant();
-                List<ComputeResourceBuilder<ResourceBuilderContext>> compute = resourceBuilders.compute(variant);
-                for (ComputeResourceBuilder<ResourceBuilderContext> builder : compute) {
-                    LOGGER.info("Start updating '{} ({})' resources of '{}' instance group of '{}' stack", builder.resourceType(),
-                            builder.getClass().getSimpleName(), group.getName(), stackName);
-                    List<CloudResource> cloudResources = builder.update(context, instance, privateId, auth, group, cloudStack);
-                    if (!CollectionUtils.isEmpty(cloudResources)) {
-                        buildableResources.addAll(cloudResources);
-                        persistResources(auth, cloudResources);
-
-                        PollGroup pollGroup = InMemoryStateStore.getStack(auth.getCloudContext().getId());
-                        if (isCancelled(pollGroup)) {
-                            throw new CancellationException(format("Updating of %s has been cancelled", cloudResources));
-                        }
-                    }
-                    LOGGER.info("Finished updating '{} ({})' resources of '{}' instance group of '{}' stack", builder.resourceType(),
-                            builder.getClass().getSimpleName(), group.getName(), stackName);
-                }
-            } catch (CancellationException e) {
-                throw e;
-            } catch (Exception e) {
-                String errorMessage = format("Failed to update resources for instance with id: '%s', message: '%s'", instance.getTemplate().getPrivateId(),
-                        e.getMessage());
-                LOGGER.error(errorMessage, e);
-                results.removeIf(crs -> crs.getPrivateId().equals(privateId));
-                for (CloudResource buildableResource : buildableResources) {
-                    results.add(new CloudResourceStatus(buildableResource, ResourceStatus.FAILED, errorMessage, privateId));
-                }
+                updateResource = builder.update(context, resource, instance, auth, stack);
+            } catch (PreserveResourceException ignored) {
+                LOGGER.debug("Preserve resource for later use.");
+                CloudResourceStatus status = new CloudResourceStatus(resource, ResourceStatus.CREATED);
+                return new ResourceRequestResult<>(FutureResult.SUCCESS, Collections.singletonList(status));
             }
-            LOGGER.debug("Finished updating all compute resources for instance: '{}' stack: '{}'", instance, stackName);
+            if (updateResource != null) {
+                PollTask<List<CloudResourceStatus>> task = resourcePollTaskFactory
+                        .newPollResourceTask(builder, auth, Collections.singletonList(updateResource), context, false);
+                List<CloudResourceStatus> pollerResult = syncPollingScheduler.schedule(task);
+                return new ResourceRequestResult<>(FutureResult.SUCCESS, pollerResult);
+            }
         }
-
-        return new ResourceRequestResult<>(FutureResult.SUCCESS, results);
+        CloudResourceStatus status = new CloudResourceStatus(resource, ResourceStatus.DELETED);
+        return new ResourceRequestResult<>(FutureResult.SUCCESS, Collections.singletonList(status));
     }
 
     private List<CloudResourceStatus> scheduleTask(PollTask<List<CloudResourceStatus>> task, List<CloudResource> resources) throws Exception {

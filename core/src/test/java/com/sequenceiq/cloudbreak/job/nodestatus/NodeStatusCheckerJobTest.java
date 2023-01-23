@@ -24,12 +24,12 @@ import org.quartz.JobExecutionException;
 
 import com.sequenceiq.cloudbreak.api.endpoint.v4.common.DetailedStackStatus;
 import com.sequenceiq.cloudbreak.api.endpoint.v4.common.StackType;
+import com.sequenceiq.cloudbreak.api.endpoint.v4.common.Status;
 import com.sequenceiq.cloudbreak.auth.altus.EntitlementService;
-import com.sequenceiq.cloudbreak.domain.stack.Stack;
-import com.sequenceiq.cloudbreak.domain.stack.StackStatus;
+import com.sequenceiq.cloudbreak.dto.StackDto;
 import com.sequenceiq.cloudbreak.node.status.NodeStatusService;
 import com.sequenceiq.cloudbreak.service.ComponentConfigProviderService;
-import com.sequenceiq.cloudbreak.service.stack.StackService;
+import com.sequenceiq.cloudbreak.service.stack.StackDtoService;
 import com.sequenceiq.cloudbreak.service.stack.StackViewService;
 import com.sequenceiq.common.api.telemetry.model.Telemetry;
 import com.sequenceiq.node.health.client.model.CdpNodeStatusRequest;
@@ -47,7 +47,7 @@ public class NodeStatusCheckerJobTest {
     private NodeStatusService nodeStatusService;
 
     @Mock
-    private StackService stackService;
+    private StackDtoService stackService;
 
     @Mock
     private StackViewService stackViewService;
@@ -80,8 +80,8 @@ public class NodeStatusCheckerJobTest {
 
     @Test
     public void testNodeStatusCheckOnDataHubWhenEntitlementIsEnabled() throws JobExecutionException {
-        Stack stack = stack(DetailedStackStatus.AVAILABLE, StackType.WORKLOAD);
-        when(stackService.getByIdWithGatewayInTransaction(anyLong())).thenReturn(stack);
+        StackDto stack = stack(DetailedStackStatus.AVAILABLE, StackType.WORKLOAD);
+        when(stackService.getById(anyLong())).thenReturn(stack);
         when(entitlementService.datahubNodestatusCheckEnabled(anyString())).thenReturn(true);
         when(nodeStatusService.getNodeStatuses(any(), any())).thenReturn(CdpNodeStatuses.Builder
                 .builder()
@@ -89,7 +89,7 @@ public class NodeStatusCheckerJobTest {
 
         underTest.executeTracedJob(jobExecutionContext);
 
-        verify(stackService).getByIdWithGatewayInTransaction(1L);
+        verify(stackService).getById(1L);
 
         verify(nodeStatusService).getNodeStatuses(eq(stack), captor.capture());
         CdpNodeStatusRequest nodeStatusRequest = captor.getValue();
@@ -101,20 +101,20 @@ public class NodeStatusCheckerJobTest {
 
     @Test
     public void testNodeStatusCheckOnDataHubWhenEntitlementIsNotEnabled() throws JobExecutionException {
-        Stack stack = stack(DetailedStackStatus.AVAILABLE, StackType.WORKLOAD);
-        when(stackService.getByIdWithGatewayInTransaction(anyLong())).thenReturn(stack);
+        StackDto stack = stack(DetailedStackStatus.AVAILABLE, StackType.WORKLOAD);
+        when(stackService.getById(anyLong())).thenReturn(stack);
         when(entitlementService.datahubNodestatusCheckEnabled(anyString())).thenReturn(false);
 
         underTest.executeTracedJob(jobExecutionContext);
 
-        verify(stackService).getByIdWithGatewayInTransaction(1L);
+        verify(stackService).getById(1L);
         verify(nodeStatusService, never()).getNodeStatuses(any(), any());
     }
 
     @Test
     public void testNodeStatusCheckChecksOnlyNetworkWhenNewMonitoringIsConfigured() throws JobExecutionException {
-        Stack stack = stack(DetailedStackStatus.AVAILABLE, StackType.DATALAKE);
-        when(stackService.getByIdWithGatewayInTransaction(anyLong())).thenReturn(stack);
+        StackDto stack = stack(DetailedStackStatus.AVAILABLE, StackType.DATALAKE);
+        when(stackService.getById(anyLong())).thenReturn(stack);
         when(telemetry.isComputeMonitoringEnabled()).thenReturn(true);
         when(componentConfigProviderService.getTelemetry(anyLong())).thenReturn(telemetry);
         when(nodeStatusService.getNodeStatuses(any(), any())).thenReturn(CdpNodeStatuses.Builder
@@ -123,7 +123,7 @@ public class NodeStatusCheckerJobTest {
 
         underTest.executeTracedJob(jobExecutionContext);
 
-        verify(stackService).getByIdWithGatewayInTransaction(1L);
+        verify(stackService).getById(1L);
 
         verify(nodeStatusService).getNodeStatuses(eq(stack), captor.capture());
         CdpNodeStatusRequest nodeStatusRequest = captor.getValue();
@@ -135,15 +135,15 @@ public class NodeStatusCheckerJobTest {
 
     @Test
     public void testNodeStatusCheckDoesNotCheckMeteringOnDataLake() throws JobExecutionException {
-        Stack stack = stack(DetailedStackStatus.AVAILABLE, StackType.DATALAKE);
-        when(stackService.getByIdWithGatewayInTransaction(anyLong())).thenReturn(stack);
+        StackDto stack = stack(DetailedStackStatus.AVAILABLE, StackType.DATALAKE);
+        when(stackService.getById(anyLong())).thenReturn(stack);
         when(nodeStatusService.getNodeStatuses(any(), any())).thenReturn(CdpNodeStatuses.Builder
                 .builder()
                 .build());
 
         underTest.executeTracedJob(jobExecutionContext);
 
-        verify(stackService).getByIdWithGatewayInTransaction(1L);
+        verify(stackService).getById(1L);
 
         verify(nodeStatusService).getNodeStatuses(eq(stack), captor.capture());
         CdpNodeStatusRequest nodeStatusRequest = captor.getValue();
@@ -155,34 +155,50 @@ public class NodeStatusCheckerJobTest {
 
     @Test
     public void testNodeStatusCheckIsUnscheduled() throws JobExecutionException {
-        Stack stack = stack(DetailedStackStatus.DELETED_ON_PROVIDER_SIDE, StackType.DATALAKE);
-        when(stackService.getByIdWithGatewayInTransaction(anyLong())).thenReturn(stack);
+        StackDto stack = stack(DetailedStackStatus.DELETED_ON_PROVIDER_SIDE, StackType.DATALAKE);
+        when(stackService.getById(anyLong())).thenReturn(stack);
 
         underTest.executeTracedJob(jobExecutionContext);
 
-        verify(stackService).getByIdWithGatewayInTransaction(1L);
+        verify(stackService).getById(1L);
         verify(nodeStatusService, never()).getNodeStatuses(any(), any());
         verify(jobService).unschedule("1");
     }
 
     @Test
     public void testNodeStatusCheckIsSkipped() throws JobExecutionException {
-        Stack stack = stack(DetailedStackStatus.CLUSTER_RECOVERY_IN_PROGRESS, StackType.DATALAKE);
-        when(stackService.getByIdWithGatewayInTransaction(anyLong())).thenReturn(stack);
+        StackDto stack = stack(DetailedStackStatus.CLUSTER_RECOVERY_IN_PROGRESS, StackType.DATALAKE);
+        when(stackService.getById(anyLong())).thenReturn(stack);
 
         underTest.executeTracedJob(jobExecutionContext);
 
-        verify(stackService).getByIdWithGatewayInTransaction(1L);
+        verify(stackService).getById(1L);
         verify(nodeStatusService, never()).getNodeStatuses(any(), any());
         verify(jobService, never()).unschedule(anyString());
     }
 
-    private Stack stack(DetailedStackStatus status, StackType stackType) {
-        Stack stack = new Stack();
-        stack.setId(1L);
-        stack.setStackStatus(new StackStatus(stack, status));
-        stack.setResourceCrn(DATAHUB_CRN);
-        stack.setType(stackType);
+    private StackDto stack(DetailedStackStatus status, StackType stackType) {
+        StackDto stack = new StackDto() {
+            @Override
+            public Long getId() {
+                return 1L;
+            }
+
+            @Override
+            public Status getStatus() {
+                return status.getStatus();
+            }
+
+            @Override
+            public String getResourceCrn() {
+                return DATAHUB_CRN;
+            }
+
+            @Override
+            public StackType getType() {
+                return stackType;
+            }
+        };
         return stack;
     }
 }

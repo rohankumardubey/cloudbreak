@@ -10,9 +10,9 @@ import org.springframework.stereotype.Service;
 import com.cloudera.thunderhead.telemetry.nodestatus.NodeStatusProto;
 import com.sequenceiq.cloudbreak.client.RPCResponse;
 import com.sequenceiq.cloudbreak.common.exception.CloudbreakServiceException;
-import com.sequenceiq.cloudbreak.domain.stack.Stack;
+import com.sequenceiq.cloudbreak.dto.StackDto;
 import com.sequenceiq.cloudbreak.logger.MDCBuilder;
-import com.sequenceiq.cloudbreak.service.stack.StackService;
+import com.sequenceiq.cloudbreak.service.stack.StackDtoService;
 import com.sequenceiq.node.health.client.CdpNodeStatusMonitorClient;
 import com.sequenceiq.node.health.client.CdpNodeStatusMonitorClientException;
 import com.sequenceiq.node.health.client.model.CdpNodeStatusRequest;
@@ -24,12 +24,12 @@ public class NodeStatusService {
     private static final Logger LOGGER = LoggerFactory.getLogger(NodeStatusService.class);
 
     @Inject
-    private StackService stackService;
+    private StackDtoService stackDtoService;
 
     @Inject
     private CdpNodeStatusMonitorClientFactory factory;
 
-    public CdpNodeStatuses getNodeStatuses(Stack stack, CdpNodeStatusRequest request) {
+    public CdpNodeStatuses getNodeStatuses(StackDto stack, CdpNodeStatusRequest request) {
         MDCBuilder.buildMdcContext(stack);
         try (CdpNodeStatusMonitorClient client = factory.getClient(stack, stack.getPrimaryGatewayInstance())) {
             return client.nodeStatusReport(request);
@@ -39,7 +39,7 @@ public class NodeStatusService {
         }
     }
 
-    public RPCResponse<NodeStatusProto.NodeStatusReport> getMeteringReport(Stack stack) {
+    public RPCResponse<NodeStatusProto.NodeStatusReport> getMeteringReport(StackDto stack) {
         MDCBuilder.buildMdcContext(stack);
         LOGGER.debug("Retrieving metering report from the hosts of stack: {}", stack.getResourceCrn());
         try (CdpNodeStatusMonitorClient client = factory.getClient(stack, stack.getPrimaryGatewayInstance())) {
@@ -51,10 +51,10 @@ public class NodeStatusService {
     }
 
     public RPCResponse<NodeStatusProto.NodeStatusReport> getMeteringReport(Long stackId) {
-        return getMeteringReport(stackService.getByIdWithGatewayInTransaction(stackId));
+        return getMeteringReport(stackDtoService.getById(stackId));
     }
 
-    public RPCResponse<NodeStatusProto.NodeStatusReport> getNetworkReport(Stack stack) {
+    public RPCResponse<NodeStatusProto.NodeStatusReport> getNetworkReport(StackDto stack) {
         LOGGER.debug("Retrieving network report from the hosts of stack: {}", stack.getResourceCrn());
         try (CdpNodeStatusMonitorClient client = factory.getClient(stack, stack.getPrimaryGatewayInstance())) {
             return client.nodeNetworkReport();
@@ -68,10 +68,10 @@ public class NodeStatusService {
     }
 
     public RPCResponse<NodeStatusProto.NodeStatusReport> getNetworkReport(Long stackId) {
-        return getNetworkReport(stackService.getByIdWithGatewayInTransaction(stackId));
+        return getNetworkReport(stackDtoService.getById(stackId));
     }
 
-    public RPCResponse<NodeStatusProto.NodeStatusReport> getServicesReport(Stack stack) {
+    public RPCResponse<NodeStatusProto.NodeStatusReport> getServicesReport(StackDto stack) {
         MDCBuilder.buildMdcContext(stack);
         LOGGER.debug("Retrieving services report from the hosts of stack: {}", stack.getResourceCrn());
         try (CdpNodeStatusMonitorClient client = factory.getClient(stack, stack.getPrimaryGatewayInstance())) {
@@ -83,11 +83,11 @@ public class NodeStatusService {
     }
 
     public RPCResponse<NodeStatusProto.NodeStatusReport> getServicesReport(Long stackId) {
-        return getServicesReport(stackService.getByIdWithGatewayInTransaction(stackId));
+        return getServicesReport(stackDtoService.getById(stackId));
     }
 
     public RPCResponse<NodeStatusProto.SaltHealthReport> saltPing(Long stackId) {
-        Stack stack = stackService.getByIdWithListsInTransaction(stackId);
+        StackDto stack = stackDtoService.getById(stackId);
         MDCBuilder.buildMdcContext(stack);
         LOGGER.debug("Retrieving salt ping report from the hosts of stack: {}", stack.getResourceCrn());
         try (CdpNodeStatusMonitorClient client = factory.getClient(stack, stack.getPrimaryGatewayInstance())) {

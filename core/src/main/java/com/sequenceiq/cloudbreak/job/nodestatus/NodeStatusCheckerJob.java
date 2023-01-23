@@ -3,6 +3,7 @@ package com.sequenceiq.cloudbreak.job.nodestatus;
 import static com.sequenceiq.cloudbreak.util.Benchmark.measure;
 
 import java.util.EnumSet;
+import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
@@ -26,13 +27,12 @@ import com.sequenceiq.cloudbreak.api.endpoint.v4.common.Status;
 import com.sequenceiq.cloudbreak.auth.altus.EntitlementService;
 import com.sequenceiq.cloudbreak.auth.crn.Crn;
 import com.sequenceiq.cloudbreak.client.RPCResponse;
-import com.sequenceiq.cloudbreak.domain.stack.Stack;
+import com.sequenceiq.cloudbreak.dto.StackDto;
 import com.sequenceiq.cloudbreak.logger.MdcContextInfoProvider;
 import com.sequenceiq.cloudbreak.node.status.NodeStatusService;
 import com.sequenceiq.cloudbreak.quartz.statuschecker.job.StatusCheckerJob;
 import com.sequenceiq.cloudbreak.service.ComponentConfigProviderService;
 import com.sequenceiq.cloudbreak.service.stack.StackDtoService;
-import com.sequenceiq.cloudbreak.service.stack.StackService;
 import com.sequenceiq.common.api.telemetry.model.Telemetry;
 import com.sequenceiq.node.health.client.model.CdpNodeStatusRequest;
 import com.sequenceiq.node.health.client.model.CdpNodeStatuses;
@@ -50,9 +50,6 @@ public class NodeStatusCheckerJob extends StatusCheckerJob {
     private NodeStatusService nodeStatusService;
 
     @Inject
-    private StackService stackService;
-
-    @Inject
     private StackDtoService stackDtoService;
 
     @Inject
@@ -60,6 +57,9 @@ public class NodeStatusCheckerJob extends StatusCheckerJob {
 
     @Inject
     private ComponentConfigProviderService componentConfigProviderService;
+
+    @Inject
+    private Optional<List<NodeStatusReportService>> reportServices;
 
     @Override
     protected Optional<MdcContextInfoProvider> getMdcContextConfigProvider() {
@@ -70,7 +70,7 @@ public class NodeStatusCheckerJob extends StatusCheckerJob {
     protected void executeTracedJob(JobExecutionContext context) throws JobExecutionException {
         try {
             measure(() -> {
-                Stack stack = stackService.getByIdWithGatewayInTransaction(getStackId());
+                StackDto stack = stackDtoService.getById(getStackId());
                 if (checkableStates(stack.getStatus())) {
                     executeNodeStatusCheck(stack);
                 } else if (unshedulableStates().contains(stack.getStatus())) {
@@ -85,7 +85,7 @@ public class NodeStatusCheckerJob extends StatusCheckerJob {
         }
     }
 
-    private void executeNodeStatusCheck(Stack stack) {
+    private void executeNodeStatusCheck(StackDto stack) {
         getNodeStatusRequest(stack).ifPresent(nodeStatusRequest -> {
             CdpNodeStatuses statuses = nodeStatusService.getNodeStatuses(stack, nodeStatusRequest);
             processNodeStatusReport(statuses.getNetworkReport(), NodeStatusProto.NodeStatus::getNetworkDetails, stack, "Network");
@@ -93,10 +93,12 @@ public class NodeStatusCheckerJob extends StatusCheckerJob {
             processNodeStatusReport(statuses.getSystemMetricsReport(), NodeStatusProto.NodeStatus::getSystemMetrics, stack, "System metrics");
             processNodeStatusReport(statuses.getMeteringReport(), NodeStatusProto.NodeStatus::getMeteringDetails, stack, "Metering");
             processCmMetricsReport(statuses.getCmMetricsReport(), stack);
+            reportServices.ifPresent(nodeStatusReportServices ->
+                    nodeStatusReportServices.forEach(nodeStatusReportService -> nodeStatusReportService.sendNotificationIfNeeded(stack, statuses)));
         });
     }
 
-    private Optional<CdpNodeStatusRequest> getNodeStatusRequest(Stack stack) {
+    private Optional<CdpNodeStatusRequest> getNodeStatusRequest(StackDto stack) {
         if (StackType.WORKLOAD.equals(stack.getType()) &&
                 !entitlementService.datahubNodestatusCheckEnabled(Crn.safeFromString(stack.getResourceCrn()).getAccountId())) {
             return Optional.empty();
@@ -111,12 +113,11 @@ public class NodeStatusCheckerJob extends StatusCheckerJob {
             }
             return Optional.of(requestBuilder
                     .withCmMonitoring()
-                    .withSkipObjectMapping()
                     .build());
         }
     }
 
-    private void processCmMetricsReport(Optional<RPCResponse<NodeStatusProto.CmMetricsReport>> cmMetricsReport, Stack stack) {
+    private void processCmMetricsReport(Optional<RPCResponse<NodeStatusProto.CmMetricsReport>> cmMetricsReport, StackDto stack) {
         if (cmMetricsReport.isPresent()) {
             LOGGER.debug("CM metrics report: {}", cmMetricsReport.get().getFirstTextMessage());
         } else {
@@ -125,7 +126,7 @@ public class NodeStatusCheckerJob extends StatusCheckerJob {
     }
 
     private <T extends GeneratedMessageV3> void processNodeStatusReport(Optional<RPCResponse<NodeStatusProto.NodeStatusReport>> nodeStatusReport,
-                                                                        Function<NodeStatusProto.NodeStatus, T> nodeStatusDetails, Stack stack, String type) {
+                                                                        Function<NodeStatusProto.NodeStatus, T> nodeStatusDetails, StackDto stack, String type) {
         if (nodeStatusReport.isPresent()) {
             LOGGER.debug("{} report: {}", type, nodeStatusReport.get().getFirstTextMessage());
             if (isStatusReportNotEmpty(nodeStatusReport.get())) {

@@ -602,6 +602,9 @@ public enum ResourceEvent {
     DATALAKE_VERTICAL_SCALE_ON_DATALAKE_FAILED("datalake.verticalscale.datalake.failed"),
     DATALAKE_VERTICAL_SCALE_FAILED("datalake.verticalscale.failed"),
 
+    // node status report events
+    NODE_STATUS_HIGH_MEMORY_USAGE("node.status.memory.usage.high"),
+
     // deprecated
     STACK_GATEWAY_CERTIFICATE_CREATE_FAILED("stack.gateway.certificate.create.skipped");
 

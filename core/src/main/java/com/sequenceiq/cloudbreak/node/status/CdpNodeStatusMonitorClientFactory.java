@@ -18,7 +18,7 @@ import com.sequenceiq.cloudbreak.client.RestClientUtil;
 import com.sequenceiq.cloudbreak.clusterproxy.ClusterProxyConfiguration;
 import com.sequenceiq.cloudbreak.common.exception.CloudbreakServiceException;
 import com.sequenceiq.cloudbreak.core.flow2.cluster.provision.service.ClusterProxyService;
-import com.sequenceiq.cloudbreak.domain.stack.Stack;
+import com.sequenceiq.cloudbreak.dto.StackDto;
 import com.sequenceiq.cloudbreak.service.TlsSecurityService;
 import com.sequenceiq.cloudbreak.view.InstanceMetadataView;
 import com.sequenceiq.node.health.client.CdpNodeStatusMonitorClient;
@@ -46,7 +46,7 @@ public class CdpNodeStatusMonitorClientFactory {
     @Inject
     private ClusterProxyConfiguration clusterProxyConfiguration;
 
-    public CdpNodeStatusMonitorClient getClient(Stack stack, InstanceMetadataView instance) {
+    public CdpNodeStatusMonitorClient getClient(StackDto stack, InstanceMetadataView instance) {
         final Optional<String> username;
         final Optional<String> password;
         if (stack.getCluster() != null
@@ -58,7 +58,7 @@ public class CdpNodeStatusMonitorClientFactory {
             password = Optional.empty();
         }
         CdpNodeStatusMonitorClient client;
-        if (clusterProxyService.isCreateConfigForClusterProxy(stack)) {
+        if (clusterProxyService.isCreateConfigForClusterProxy(stack.getStack())) {
             client = buildClientForClusterProxy(stack, instance, username, password);
         } else {
             client = buildClientForDirectConnect(stack, username, password);
@@ -66,7 +66,7 @@ public class CdpNodeStatusMonitorClientFactory {
         return client;
     }
 
-    private CdpNodeStatusMonitorClient buildClientForClusterProxy(Stack stack, InstanceMetadataView instanceMetaData, Optional<String> username,
+    private CdpNodeStatusMonitorClient buildClientForClusterProxy(StackDto stack, InstanceMetadataView instanceMetaData, Optional<String> username,
             Optional<String> password) {
         HttpClientConfig httpClientConfig = new HttpClientConfig(clusterProxyConfiguration.getClusterProxyHost());
         String clusterProxyPath = toClusterProxyBasepath(stack, instanceMetaData.getInstanceId());
@@ -74,10 +74,10 @@ public class CdpNodeStatusMonitorClientFactory {
                 username, password);
     }
 
-    private CdpNodeStatusMonitorClient buildClientForDirectConnect(Stack stack, Optional<String> username,
+    private CdpNodeStatusMonitorClient buildClientForDirectConnect(StackDto stack, Optional<String> username,
             Optional<String> password) {
         HttpClientConfig httpClientConfig = tlsSecurityService.buildTLSClientConfigForPrimaryGateway(stack.getId(), stack.getClusterManagerIp(),
-                stack.cloudPlatform());
+                stack.getCloudPlatform());
         int gatewayPort = Optional.ofNullable(stack.getGatewayPort()).orElse(ServiceFamilies.GATEWAY.getDefaultPort());
         return buildNodeStatusMonitorClient(httpClientConfig, gatewayPort, DEFAULT_BASE_PATH, Map.of(), username, password);
     }
@@ -114,7 +114,7 @@ public class CdpNodeStatusMonitorClientFactory {
         return new CdpNodeStatusMonitorClient(restClient, url, headers, null, username, password);
     }
 
-    private String toClusterProxyBasepath(Stack stack, String clusterProxyServiceName) {
+    private String toClusterProxyBasepath(StackDto stack, String clusterProxyServiceName) {
         return String.format("%s%s", clusterProxyService.getProxyPath(stack.getResourceCrn(), clusterProxyServiceName), DEFAULT_BASE_PATH);
     }
 

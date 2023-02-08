@@ -144,6 +144,8 @@ freeipa:
         - HA
       HA:
         - TWO_NODE_BASED
+      TEMPORARY_FOUR_NODE_BASED:
+        - HA
   sudo:
     ruleName: cb-sudo-rule
     allowCommands: >

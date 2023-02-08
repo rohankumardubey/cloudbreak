@@ -8,6 +8,7 @@ import java.util.stream.Stream;
 
 public enum AvailabilityType {
 
+    TEMPORARY_FOUR_NODE_BASED(4),
     HA(3),
     TWO_NODE_BASED(2),
     NON_HA(1);

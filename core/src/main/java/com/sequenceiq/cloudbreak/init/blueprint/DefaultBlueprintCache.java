@@ -1,7 +1,11 @@
 package com.sequenceiq.cloudbreak.init.blueprint;
 
+import static com.sequenceiq.cloudbreak.common.gov.GovUtils.govCloudCompatibleVersion;
+import static com.sequenceiq.cloudbreak.common.gov.GovUtils.govCloudDeployment;
+
 import java.io.IOException;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
@@ -13,6 +17,7 @@ import javax.inject.Inject;
 import org.apache.commons.lang3.StringUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Scope;
 import org.springframework.stereotype.Component;
 
@@ -22,6 +27,7 @@ import com.sequenceiq.cloudbreak.api.endpoint.v4.blueprint.requests.BlueprintV4R
 import com.sequenceiq.cloudbreak.cmtemplate.utils.BlueprintUtils;
 import com.sequenceiq.cloudbreak.common.anonymizer.AnonymizerUtil;
 import com.sequenceiq.cloudbreak.common.json.Json;
+import com.sequenceiq.cloudbreak.common.provider.ProviderPreferencesService;
 import com.sequenceiq.cloudbreak.converter.v4.blueprint.BlueprintV4RequestToBlueprintConverter;
 import com.sequenceiq.cloudbreak.domain.Blueprint;
 import com.sequenceiq.cloudbreak.domain.BlueprintFile;
@@ -35,6 +41,9 @@ public class DefaultBlueprintCache {
 
     private final Map<String, BlueprintFile> defaultBlueprints = new HashMap<>();
 
+    @Value("#{'${cb.blueprint.cm.gov.exclusionList:}'.split(',')}")
+    private Set<String> exclusionList = new HashSet<>();
+
     @Inject
     private BlueprintEntities blueprintEntities;
 
@@ -44,9 +53,13 @@ public class DefaultBlueprintCache {
     @Inject
     private BlueprintV4RequestToBlueprintConverter converter;
 
+    @Inject
+    private ProviderPreferencesService preferencesService;
+
     @PostConstruct
     public void loadBlueprintsFromFile() {
         Map<String, Set<String>> blueprints = blueprints();
+        boolean govCloudDeployment = govCloudDeployment(preferencesService.enabledGovPlatforms(), preferencesService.enabledPlatforms());
         for (Map.Entry<String, Set<String>> blueprintEntry : blueprints.entrySet()) {
             try {
                 for (String blueprintText : blueprintEntry.getValue()) {
@@ -77,7 +90,15 @@ public class DefaultBlueprintCache {
                                 .hostGroupCount(bp.getHostGroupCount())
                                 .description(bp.getDescription())
                                 .build();
-                        defaultBlueprints.put(bp.getName(), bpf);
+                        String fileName = split[1];
+
+                        if (govCloudDeployment) {
+                            if (govCloudCompatibleVersion(bp.getStackVersion()) && !exclusionList.contains(fileName)) {
+                                defaultBlueprints.put(bp.getName(), bpf);
+                            }
+                        } else {
+                            defaultBlueprints.put(bp.getName(), bpf);
+                        }
                     }
                 }
             } catch (IOException e) {

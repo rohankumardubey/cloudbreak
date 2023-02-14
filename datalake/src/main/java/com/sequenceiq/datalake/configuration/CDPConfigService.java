@@ -1,5 +1,8 @@
 package com.sequenceiq.datalake.configuration;
 
+import static com.sequenceiq.cloudbreak.common.gov.GovUtils.govCloudCompatibleVersion;
+import static com.sequenceiq.cloudbreak.common.gov.GovUtils.govCloudDeployment;
+
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
@@ -37,6 +40,7 @@ import com.sequenceiq.cloudbreak.auth.altus.model.Entitlement;
 import com.sequenceiq.cloudbreak.common.exception.CloudbreakServiceException;
 import com.sequenceiq.cloudbreak.common.json.JsonUtil;
 import com.sequenceiq.cloudbreak.common.mappable.CloudPlatform;
+import com.sequenceiq.cloudbreak.common.provider.ProviderPreferencesService;
 import com.sequenceiq.cloudbreak.common.type.Versioned;
 import com.sequenceiq.cloudbreak.util.VersionComparator;
 import com.sequenceiq.datalake.service.imagecatalog.ImageCatalogService;
@@ -84,6 +88,9 @@ public class CDPConfigService {
     @Inject
     private ImageCatalogService imageCatalogService;
 
+    @Inject
+    private ProviderPreferencesService preferencesService;
+
     @PostConstruct
     public void initCdpStackRequests() {
         PathMatchingResourcePatternResolver pathMatchingResourcePatternResolver = new PathMatchingResourcePatternResolver();
@@ -104,7 +111,7 @@ public class CDPConfigService {
                         if (!cdpStackRequests.containsKey(cdpConfigKey)) {
                             cdpStackRequests.put(cdpConfigKey, Maps.newHashMap());
                         }
-                        cdpStackRequests.get(cdpConfigKey).putIfAbsent(entitlementOptional, templateString);
+                        updateCdpStackRequests(runtimeVersion, cdpConfigKey, entitlementOptional, templateString);
                     }
                 }
             }
@@ -112,6 +119,15 @@ public class CDPConfigService {
         } catch (IOException e) {
             LOGGER.error("Can't read CDP template files", e);
             throw new IllegalStateException("Can't read CDP template files", e);
+        }
+    }
+
+    private void updateCdpStackRequests(String runtimeVersion, CDPConfigKey cdpConfigKey, Optional<Entitlement> entitlementOptional, String templateString) {
+        if (govCloudDeployment(preferencesService.enabledGovPlatforms(), preferencesService.enabledPlatforms())
+                && govCloudCompatibleVersion(runtimeVersion)) {
+            cdpStackRequests.get(cdpConfigKey).putIfAbsent(entitlementOptional, templateString);
+        } else if (!govCloudDeployment(preferencesService.enabledGovPlatforms(), preferencesService.enabledPlatforms())) {
+            cdpStackRequests.get(cdpConfigKey).putIfAbsent(entitlementOptional, templateString);
         }
     }
 

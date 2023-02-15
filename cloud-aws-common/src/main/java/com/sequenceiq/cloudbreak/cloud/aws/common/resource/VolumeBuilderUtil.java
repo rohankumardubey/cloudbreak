@@ -6,13 +6,17 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.stream.Collectors;
 
+import javax.inject.Inject;
+
 import org.springframework.stereotype.Component;
 
 import com.amazonaws.services.ec2.model.BlockDeviceMapping;
 import com.amazonaws.services.ec2.model.DescribeImagesRequest;
 import com.amazonaws.services.ec2.model.DescribeImagesResult;
 import com.amazonaws.services.ec2.model.EbsBlockDevice;
+import com.sequenceiq.cloudbreak.auth.altus.EntitlementService;
 import com.sequenceiq.cloudbreak.cloud.aws.common.client.AmazonEc2Client;
+import com.sequenceiq.cloudbreak.cloud.aws.common.resource.volume.AwsVolumeIopsAndThroughputCalculator;
 import com.sequenceiq.cloudbreak.cloud.aws.common.view.AuthenticatedContextView;
 import com.sequenceiq.cloudbreak.cloud.aws.common.view.AwsInstanceView;
 import com.sequenceiq.cloudbreak.cloud.context.AuthenticatedContext;
@@ -23,6 +27,12 @@ import com.sequenceiq.cloudbreak.cloud.model.Volume;
 
 @Component
 public class VolumeBuilderUtil {
+
+    @Inject
+    private AwsVolumeIopsAndThroughputCalculator awsVolumeIopsAndThroughputCalculator;
+
+    @Inject
+    private EntitlementService entitlementService;
 
     public List<BlockDeviceMapping> getEphemeral(AwsInstanceView awsInstanceView) {
         Long ephemeralCount = getEphemeralCount(awsInstanceView);
@@ -55,14 +65,20 @@ public class VolumeBuilderUtil {
     public BlockDeviceMapping getRootVolume(AwsInstanceView awsInstanceView, Group group, CloudStack cloudStack, AuthenticatedContext ac) {
         return new BlockDeviceMapping()
                 .withDeviceName(getRootDeviceName(ac, cloudStack))
-                .withEbs(getEbs(awsInstanceView, group));
+                .withEbs(getRootEbs(awsInstanceView, group, ac.getCloudCredential().getAccountId()));
     }
 
-    public EbsBlockDevice getEbs(AwsInstanceView awsInstanceView, Group group) {
+    public EbsBlockDevice getRootEbs(AwsInstanceView awsInstanceView, Group group, String accountId) {
+
+        String volumeType = entitlementService.isAwsGp3SupportEnabled(accountId) ? "gp3" : "gp2";
+        int rootVolumeSize = group.getRootVolumeSize();
+
         EbsBlockDevice ebsBlockDevice = new EbsBlockDevice()
                 .withDeleteOnTermination(true)
-                .withVolumeType("gp2")
-                .withVolumeSize(group.getRootVolumeSize());
+                .withVolumeType(volumeType)
+                .withIops(awsVolumeIopsAndThroughputCalculator.getIops(volumeType, rootVolumeSize))
+                .withThroughput(awsVolumeIopsAndThroughputCalculator.getThroughput(volumeType, rootVolumeSize))
+                .withVolumeSize(rootVolumeSize);
 
         if (awsInstanceView.isEncryptedVolumes()) {
             ebsBlockDevice.withEncrypted(true);

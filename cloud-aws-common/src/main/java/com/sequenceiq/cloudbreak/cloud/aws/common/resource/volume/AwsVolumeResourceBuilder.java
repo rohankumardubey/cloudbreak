@@ -108,6 +108,9 @@ public class AwsVolumeResourceBuilder extends AbstractAwsComputeBuilder {
     @Inject
     private ResourceRetriever resourceRetriever;
 
+    @Inject
+    private AwsVolumeIopsAndThroughputCalculator awsVolumeIopsAndThroughputCalculator;
+
     private BiFunction<Volume, Boolean, InstanceBlockDeviceMappingSpecification> toInstanceBlockDeviceMappingSpecification = (volume, flag) -> {
         EbsInstanceBlockDeviceSpecification device = new EbsInstanceBlockDeviceSpecification()
                 .withVolumeId(volume.getId())
@@ -342,6 +345,8 @@ public class AwsVolumeResourceBuilder extends AbstractAwsComputeBuilder {
                     .withSnapshotId(null)
                     .withTagSpecifications(tagSpecification)
                     .withVolumeType(volume.getType())
+                    .withIops(awsVolumeIopsAndThroughputCalculator.getIops(volume.getType(), volume.getSize()))
+                    .withThroughput(awsVolumeIopsAndThroughputCalculator.getThroughput(volume.getType(), volume.getSize()))
                     .withEncrypted(encryptedVolume)
                     .withKmsKeyId(volumeEncryptionKey);
             return Pair.of(createVolumeRequest, volume.getCloudVolumeUsageType());

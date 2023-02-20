@@ -171,7 +171,7 @@ public class StackUpgradeOperations {
                 upgradeResponse.appendReason(upgradePreconditionService.checkForNonUpgradeableAttachedClusters(datahubsInEnvironment));
             }
             upgradeResponse.appendReason(upgradePreconditionService.checkForRunningAttachedClusters(datahubsInEnvironment, request.
-                    isSkipDataHubValidation(), accountId));
+                    isSkipDataHubValidation(), request.getInternalUpgradeSettings().isRollingUpgradeEnabled(), accountId));
         }
     }
 

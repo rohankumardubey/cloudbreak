@@ -139,6 +139,19 @@ public class FlowService {
             flowCheckResponse.setHasActiveFlow(!completed("Flow chain", chainId, relatedChains, relatedFlowLogs));
             flowCheckResponse.setLatestFlowFinalizedAndFailed(isFlowInFailedState(relatedFlowLogs, failHandledEvents));
             setEndTimeOnFlowCheckResponse(flowCheckResponse, relatedFlowLogs);
+            if (!completed("Flow chain", chainId, relatedChains, relatedFlowLogs)) {
+                if (relatedFlowLogs.size() > 0) {
+                    if (relatedFlowLogs.get(0).getCurrentState() != null) {
+                        flowCheckResponse.setCurrentState(relatedFlowLogs.get(0).getCurrentState());
+                    }
+                    if (relatedFlowLogs.get(0).getNextEvent() != null) {
+                        flowCheckResponse.setNextEvent(relatedFlowLogs.get(0).getNextEvent());
+                    }
+                    if (relatedFlowLogs.get(0).getFlowType() != null) {
+                        flowCheckResponse.setFlowType(relatedFlowLogs.get(0).getFlowType().getName());
+                    }
+                }
+            }
         } else {
             flowCheckResponse.setHasActiveFlow(Boolean.FALSE);
         }
@@ -195,6 +208,19 @@ public class FlowService {
         flowCheckResponse.setFlowId(flowId);
         flowCheckResponse.setHasActiveFlow(!completed("Flow", flowId, List.of(), allByFlowIdOrderByCreatedDesc));
         flowCheckResponse.setLatestFlowFinalizedAndFailed(isFlowInFailedState(allByFlowIdOrderByCreatedDesc, failHandledEvents));
+        if (!completed("Flow", flowId, List.of(), allByFlowIdOrderByCreatedDesc)) {
+            if (allByFlowIdOrderByCreatedDesc.size() > 0) {
+                if (allByFlowIdOrderByCreatedDesc.get(0).getCurrentState() != null) {
+                    flowCheckResponse.setCurrentState(allByFlowIdOrderByCreatedDesc.get(0).getCurrentState());
+                }
+                if (allByFlowIdOrderByCreatedDesc.get(0).getNextEvent() != null) {
+                    flowCheckResponse.setNextEvent(allByFlowIdOrderByCreatedDesc.get(0).getNextEvent());
+                }
+                if (allByFlowIdOrderByCreatedDesc.get(0).getFlowType() != null) {
+                    flowCheckResponse.setFlowType(allByFlowIdOrderByCreatedDesc.get(0).getFlowType().getName());
+                }
+            }
+        }
         return flowCheckResponse;
     }
 

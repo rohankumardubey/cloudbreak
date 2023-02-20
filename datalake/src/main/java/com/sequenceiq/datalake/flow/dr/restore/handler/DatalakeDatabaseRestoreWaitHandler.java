@@ -14,15 +14,21 @@ import com.dyngr.exception.PollerStoppedException;
 import com.dyngr.exception.UserBreakException;
 import com.sequenceiq.cloudbreak.common.event.Selectable;
 import com.sequenceiq.cloudbreak.eventbus.Event;
+import com.sequenceiq.datalake.entity.SdxCluster;
 import com.sequenceiq.datalake.entity.operation.SdxOperationStatus;
 import com.sequenceiq.datalake.flow.dr.restore.event.DatalakeDatabaseRestoreFailedEvent;
 import com.sequenceiq.datalake.flow.dr.restore.event.DatalakeDatabaseRestoreWaitRequest;
 import com.sequenceiq.datalake.flow.dr.restore.event.DatalakeFullRestoreInProgressEvent;
+import com.sequenceiq.datalake.repository.SdxClusterRepository;
 import com.sequenceiq.datalake.service.sdx.PollingConfig;
 import com.sequenceiq.datalake.service.sdx.dr.SdxBackupRestoreService;
+import com.sequenceiq.datalake.service.sdx.flowcheck.CloudbreakFlowService;
+import com.sequenceiq.flow.api.model.FlowCheckResponse;
 import com.sequenceiq.flow.event.EventSelectorUtil;
 import com.sequenceiq.flow.reactor.api.handler.ExceptionCatcherEventHandler;
 import com.sequenceiq.flow.reactor.api.handler.HandlerEvent;
+
+import static com.sequenceiq.cloudbreak.common.exception.NotFoundException.notFound;
 
 @Component
 public class DatalakeDatabaseRestoreWaitHandler extends ExceptionCatcherEventHandler<DatalakeDatabaseRestoreWaitRequest> {
@@ -37,6 +43,12 @@ public class DatalakeDatabaseRestoreWaitHandler extends ExceptionCatcherEventHan
 
     @Inject
     private SdxBackupRestoreService sdxBackupRestoreService;
+
+    @Inject
+    private SdxClusterRepository sdxClusterRepository;
+
+    @Inject
+    private CloudbreakFlowService cloudbreakFlowService;
 
     @Override
     public String selector() {
@@ -68,8 +80,20 @@ public class DatalakeDatabaseRestoreWaitHandler extends ExceptionCatcherEventHan
             LOGGER.info("Database restore poller stopped for cluster: {}", sdxId);
             sdxBackupRestoreService.updateDatabaseStatusEntry(event.getData().getOperationId(),
                     SdxOperationStatus.FAILED, pollerStoppedException.getLocalizedMessage());
+            // Get at which step the timeout happens.
+            SdxCluster sdxCluster = sdxClusterRepository.findById(sdxId).orElseThrow(notFound("SDX cluster", sdxId));
+            FlowCheckResponse lastKnownFlowCheckResponse = cloudbreakFlowService.getLastKnownFlowCheckResponse(sdxCluster);
+            String extraInfo = "";
+            if (lastKnownFlowCheckResponse != null && lastKnownFlowCheckResponse.getCurrentState() != null) {
+                String state = String.format(" during the transition from %s to its next state", lastKnownFlowCheckResponse.getCurrentState());
+                String flowType = lastKnownFlowCheckResponse.getFlowType() != null ?
+                        String.format(", set up in %s", lastKnownFlowCheckResponse.getFlowType()) : "";
+                String triggeredEvent = lastKnownFlowCheckResponse.getNextEvent() != null ?
+                        String.format(", triggered by %s", lastKnownFlowCheckResponse.getNextEvent()) : "";
+                extraInfo = String.format("%s%s%s", state, flowType, triggeredEvent);
+            }
             response = new DatalakeDatabaseRestoreFailedEvent(sdxId, userId,
-                    new PollerStoppedException("Database restore timed out after " + durationInMinutes + " minutes"));
+                    new PollerStoppedException("Database restore timed out after " + durationInMinutes + " minutes" + extraInfo));
         } catch (PollerException exception) {
             LOGGER.info("Database restore polling failed for cluster: {}", sdxId);
             sdxBackupRestoreService.updateDatabaseStatusEntry(event.getData().getOperationId(),

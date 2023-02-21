@@ -1,10 +1,13 @@
 package com.sequenceiq.periscope.service;
 
+import java.nio.ByteBuffer;
 import java.util.Optional;
 import java.util.Set;
+import java.util.UUID;
 
 import javax.inject.Inject;
 
+import org.apache.commons.codec.binary.Base64;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.retry.annotation.Backoff;
@@ -27,7 +30,9 @@ public class AltusMachineUserService {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(AltusMachineUserService.class);
 
-    private static final String AUTOSCALE_MACHINE_USER_NAME_PATTERN = "datahub-autoscale-metrics-%s";
+    private static final String AUTOSCALE_MACHINE_USER_NAME_PATTERN = "as%s";
+
+    private static final Integer BYTEBUFFER_SIZE = 16;
 
     @Inject
     private GrpcUmsClient grpcUmsClient;
@@ -66,6 +71,7 @@ public class AltusMachineUserService {
         } catch (Exception ex) {
             LOGGER.warn("Error initializing machineUserCrn for cluster '{}' yarn polling", cluster.getStackCrn(), ex);
         }
+
     }
 
     @Retryable(value = Exception.class, maxAttempts = 5, backoff = @Backoff(delay = 10000))
@@ -81,7 +87,8 @@ public class AltusMachineUserService {
 
     private MachineUser getOrCreateAutoscaleMachineUser(String environmentCrn, String accountId) {
         //Idempotent api retrieves machine user or creates if missing.
-        String autoscaleMachineUserName = String.format(AUTOSCALE_MACHINE_USER_NAME_PATTERN, Crn.fromString(environmentCrn).getResource());
+        String encodedEnvResource = encodeEnvironmentResourceUuid(Crn.safeFromString(environmentCrn).getResource());
+        String autoscaleMachineUserName = String.format(AUTOSCALE_MACHINE_USER_NAME_PATTERN, encodedEnvResource);
         MachineUser machineUser = grpcUmsClient.getOrCreateMachineUserWithoutAccessKey(autoscaleMachineUserName, accountId);
         LOGGER.info("Retrieved machineUser '{}' for machineUserName '{}' ", machineUser, autoscaleMachineUserName);
         return machineUser;
@@ -96,5 +103,14 @@ public class AltusMachineUserService {
         SyncOperationStatus statusResponse = freeIpaCommunicator.synchronizeAllUsers(request);
         LOGGER.info("Finished invoking freeIpa user Sync with operation: {}, for environmentCrn: {} and machineUserCrn: {}", statusResponse.getOperationId(),
                 environmentCrn, machineUserCrn);
+    }
+
+    private String encodeEnvironmentResourceUuid(String environmentResource) {
+        UUID envUuid = UUID.fromString(environmentResource);
+        ByteBuffer byteBuffer = ByteBuffer.wrap(new byte[BYTEBUFFER_SIZE]);
+        byteBuffer.putLong(envUuid.getMostSignificantBits());
+        byteBuffer.putLong(envUuid.getLeastSignificantBits());
+
+        return Base64.encodeBase64String(byteBuffer.array());
     }
 }

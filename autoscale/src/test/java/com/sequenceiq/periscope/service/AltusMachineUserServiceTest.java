@@ -72,7 +72,7 @@ class AltusMachineUserServiceTest {
         MockitoAnnotations.openMocks(this);
         testEnvironmentCrn = "crn:cdp:environments:us-west-1:9d74eee4-1cad-45d7-b645-7ccf9edbb73d:environment:1584cdfa-ad2f-45ff-b3d9-414b5b013001";
         testAccountId = "testTenant";
-        autoscaleMachineUserName = "datahub-autoscale-metrics-1584cdfa-ad2f-45ff-b3d9-414b5b013001";
+        autoscaleMachineUserName = "asFYTN+q0vRf+z2UFLWwEwAQ==";
         autoscaleMachineUserCrn = "testMachineUserCrn";
         environmentRoleCrn = "environmentuserRoleCrn";
         testOperationId = "testOperationId";

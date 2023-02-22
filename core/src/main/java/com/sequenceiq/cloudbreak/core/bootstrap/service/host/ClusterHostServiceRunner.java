@@ -55,6 +55,7 @@ import com.sequenceiq.cloudbreak.auth.altus.VirtualGroupRequest;
 import com.sequenceiq.cloudbreak.auth.altus.VirtualGroupService;
 import com.sequenceiq.cloudbreak.auth.crn.Crn;
 import com.sequenceiq.cloudbreak.auth.crn.RegionAwareInternalCrnGeneratorFactory;
+import com.sequenceiq.cloudbreak.cloud.aws.common.AwsConstants;
 import com.sequenceiq.cloudbreak.cloud.model.ClouderaManagerRepo;
 import com.sequenceiq.cloudbreak.cloud.model.StackTags;
 import com.sequenceiq.cloudbreak.cloud.scheduler.CancellationException;
@@ -551,7 +552,7 @@ public class ClusterHostServiceRunner {
         Telemetry telemetry = componentConfigProviderService.getTelemetry(stack.getId());
         servicePillar.putAll(telemetrySaltPillarDecorator.generatePillarConfigMap(stackDto));
         decoratePillarWithTags(stack, servicePillar);
-        decorateWithClouderaManagerEntrerpriseDetails(telemetry, servicePillar);
+        decorateWithClouderaManagerEnterpriseDetails(telemetry, servicePillar);
         Optional<String> licenseOpt = decoratePillarWithClouderaManagerLicense(stack, servicePillar);
         decoratePillarWithClouderaManagerRepo(clouderaManagerRepo, servicePillar, licenseOpt);
         decoratePillarWithClouderaManagerDatabase(cluster, servicePillar);
@@ -568,7 +569,7 @@ public class ClusterHostServiceRunner {
 
     // Right now we are assuming that CM enterprise is enabled if workload analytics is used
     // In the future that should be enabled based on the license
-    private void decorateWithClouderaManagerEntrerpriseDetails(Telemetry telemetry, Map<String, SaltPillarProperties> servicePillar) {
+    private void decorateWithClouderaManagerEnterpriseDetails(Telemetry telemetry, Map<String, SaltPillarProperties> servicePillar) {
         if (telemetry != null && telemetry.getWorkloadAnalytics() != null) {
             servicePillar.put("cloudera-manager-cme",
                     new SaltPillarProperties("/cloudera-manager/cme.sls", singletonMap("cloudera-manager", singletonMap("cme_enabled", true))));
@@ -656,6 +657,7 @@ public class ClusterHostServiceRunner {
                         "settings", Map.of(
                                 "heartbeat_interval", cmHeartbeatInterval,
                                 "missed_heartbeat_interval", cmMissedHeartbeatInterval,
+                                "gov_cloud", govCluster(stackDto.getPlatformVariant()),
                                 "disable_auto_bundle_collection", disableAutoBundleCollection,
                                 "set_cdp_env", isVersionNewerOrEqualThanLimited(cmVersion, CLOUDERAMANAGER_VERSION_7_0_2),
                                 "cloud_provider_setup_supported", isCloudProviderSetupSupported(stackDto, cmVersion),
@@ -668,6 +670,13 @@ public class ClusterHostServiceRunner {
     private boolean isCloudProviderSetupSupported(StackDto stackDto, String cmVersion) {
         List<String> supportedCloudProviders = List.of(CloudPlatform.AWS.name(), CloudPlatform.GCP.name(), CloudPlatform.AZURE.name());
         return supportedCloudProviders.contains(stackDto.getCloudPlatform()) && isVersionNewerOrEqualThanLimited(cmVersion, CLOUDERAMANAGER_VERSION_7_6_2);
+    }
+
+    private boolean govCluster(String platformVariant) {
+        if (platformVariant.equals(AwsConstants.AwsVariant.AWS_NATIVE_GOV_VARIANT.variant().value())) {
+            return true;
+        }
+        return false;
     }
 
     private void decoratePillarWithTags(StackView stack, Map<String, SaltPillarProperties> servicePillarConfig) {
